@@ -288,8 +288,6 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
         region_id, type (rid/zid), and pmap_id so that
         async_clean_segments can reconstruct the Roomba REST payload.
         """
-        if not _HAS_CLEAN_AREA:
-            return []
 
         segments: list[Segment] = []
         self._segment_map.clear()
