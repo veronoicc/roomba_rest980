@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 
 from .const import DOMAIN, regionTypeMappings
 
@@ -25,6 +26,8 @@ def load_font(size: int):
     except OSError:
         return ImageFont.load_default()
 
+MAX_SETUP_RETRIES = 3
+RETRY_DELAY = 5
 
 # preload some sizes
 FONT_SIZES = {
@@ -64,7 +67,7 @@ OBSERVED_ZONE_BORDER = (255, 140, 0)  # Dark orange
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback, _retries=0
 ) -> None:
     """Set up Roomba map camera."""
     _LOGGER.debug("Setting up camera platform for entry %s", entry.unique_id)
@@ -72,7 +75,13 @@ async def async_setup_entry(
     cloudCoordinator = entry.runtime_data.cloud_coordinator
 
     if not cloudCoordinator:
-        _LOGGER.warning("No cloud coordinator found for camera setup")
+        if _retries < MAX_SETUP_RETRIES:
+            _LOGGER.warning("No cloud coordinator found for camera setup, will retry...")
+            async def _retry_now(_now):
+                await async_setup_entry(hass, entry, async_add_entities, _retries=_retries+1)
+            async_call_later(hass, RETRY_DELAY, _retry_now)
+        else:
+            _LOGGER.error("Aborting camera setup after retries—no cloud coordinator found.")
         return
 
     if not cloudCoordinator.data:
