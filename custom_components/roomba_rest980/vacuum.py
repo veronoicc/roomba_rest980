@@ -255,29 +255,10 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
 
     def _build_clean_params(self) -> dict[str, Any]:
         """Build Roomba cleaning parameters from current mode selections."""
-        runtime_data = self._entry.runtime_data
-
-        if runtime_data.vacuum_mode == "vacuum":
-            operating_mode = 2
-        else:
-            operating_mode = 6
-
-        if runtime_data.mop_mode == "low":
-            wet_mode = 1
-        elif runtime_data.mop_mode == "medium":
-            wet_mode = 2
-        else:
-            wet_mode = 3
-
+        
         return {
-            "noAutoPasses": True,
-            "operatingMode": operating_mode,
-            "padWetness": {
-                "disposable": wet_mode,
-                "reusable": wet_mode,
-            },
+            "noAutoPasses": False,
             "twoPass": False,
-            "swScrub": 0,
         }
 
     async def async_get_segments(self) -> list:
