@@ -31,7 +31,7 @@
   "requirements": [
     "aiofiles==24.1.0"
   ],
-  "version": "1.19.2",
+  "version": "1.20.0-beta",
   "zeroconf": [
     {
       "type": "_amzn-alexa._tcp.local.",
