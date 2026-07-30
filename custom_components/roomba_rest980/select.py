@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities):
     """Create the switches to identify cleanable rooms."""
     cloudCoordinator = entry.runtime_data.cloud_coordinator
-    entities = []
+    entities = [CleanModeSelect(entry), MopIntensitySelect(entry)]
     if cloudCoordinator and cloudCoordinator.data:
         blid = entry.runtime_data.robot_blid
         # Get cloud data for the specific robot
