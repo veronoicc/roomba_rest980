@@ -150,7 +150,7 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
         segments: list[Segment] = []
         self._segment_map.clear()
 
-        robot_data = self._get_cloud_robot_data()
+        robot_data = self._entry.runtime_data.cloud_coordinator.data
         if not robot_data or "pmaps" not in robot_data:
             return segments
 
