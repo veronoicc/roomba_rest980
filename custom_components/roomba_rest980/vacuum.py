@@ -234,7 +234,7 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
             await self.hass.services.async_call(
                 DOMAIN,
                 "rest980_clean",
-                },
+                payload,
                 blocking=True,
             )
 
