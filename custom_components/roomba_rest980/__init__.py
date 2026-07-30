@@ -26,6 +26,9 @@ class RoombaRuntimeData:
     cloud_enabled: bool = False
     cloud_coordinator: RoombaCloudCoordinator = None
 
+    vacuum_mode: str = None
+    mop_mode: str = None
+
     switched_rooms: dict[str, CleanRoomPasses] = {}
 
     def __init__(

@@ -18,6 +18,13 @@ from .LegacyCompatibility import createExtendedAttributes
 
 _LOGGER = logging.getLogger(__name__)
 
+try:
+    from homeassistant.components.vacuum import Segment
+
+    _HAS_CLEAN_AREA = hasattr(VacuumEntityFeature, "CLEAN_AREA")
+except ImportError:
+    _HAS_CLEAN_AREA = False
+
 SUPPORT_ROBOT = (
     VacuumEntityFeature.START
     | VacuumEntityFeature.RETURN_HOME
@@ -28,6 +35,8 @@ SUPPORT_ROBOT = (
     | VacuumEntityFeature.STOP
     | VacuumEntityFeature.PAUSE
 )
+if _HAS_CLEAN_AREA:
+    SUPPORT_ROBOT = SUPPORT_ROBOT | VacuumEntityFeature.CLEAN_AREA
 
 
 async def async_setup_entry(
@@ -53,11 +62,13 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
         self._attr_supported_features = SUPPORT_ROBOT
         self._attr_unique_id = f"{entry.unique_id}_vacuum"
         self._attr_name = entry.title
+        self._segment_map: dict[str, dict[str, Any]] = {}
 
     def _handle_coordinator_update(self):
         """Update all attributes."""
         data = self.coordinator.data or {}
         status = data.get("cleanMissionStatus", {})
+        bin_data = data.get("bin") or {}
         cycle = status.get("cycle")
         phase = status.get("phase")
         not_ready = status.get("notReady")
@@ -87,8 +98,145 @@ class RoombaVacuum(CoordinatorEntity, StateVacuumEntity):
             self._attr_activity = VacuumActivity.RETURNING
 
         self._attr_available = data != {}
-        self._attr_extra_state_attributes = createExtendedAttributes(self)
+        extra_attributes = createExtendedAttributes(self)
+        extra_attributes.update(
+            {
+                "battery_level": self._attr_battery_level,
+                "bin_full": bin_data.get("full"),
+                "bin_present": bin_data.get("present"),
+            }
+        )
+        self._attr_extra_state_attributes = extra_attributes
         self._async_write_ha_state()
+
+    def _build_clean_params(self) -> dict[str, Any]:
+        """Build Roomba cleaning parameters from current mode selections."""
+        runtime_data = self._entry.runtime_data
+
+        if runtime_data.vacuum_mode == "vacuum":
+            operating_mode = OPERATING_MODE_VACUUM
+        else:
+            operating_mode = OPERATING_MODE_MOP
+
+        if runtime_data.mop_mode == "low":
+            wet_mode = MOP_MODE_LOW
+        elif runtime_data.mop_mode == "medium":
+            wet_mode = MOP_MODE_MEDIUM
+        else:
+            wet_mode = MOP_MODE_HIGH
+
+        return {
+            "noAutoPasses": True,
+            "operatingMode": operating_mode,
+            "padWetness": {
+                "disposable": wet_mode,
+                "reusable": wet_mode,
+            },
+            "twoPass": False,
+            "swScrub": 0,
+        }
+
+    async def async_get_segments(self) -> list:
+        """Return the cleanable segments reported by the vacuum.
+
+        Each Roomba region and zone from the active persistent map is
+        returned as a Segment with a composite ID that encodes the
+        region_id, type (rid/zid), and pmap_id so that
+        async_clean_segments can reconstruct the Roomba REST payload.
+        """
+        if not _HAS_CLEAN_AREA:
+            return []
+
+        segments: list[Segment] = []
+        self._segment_map.clear()
+
+        robot_data = self._get_cloud_robot_data()
+        if not robot_data or "pmaps" not in robot_data:
+            return segments
+
+        for pmap in robot_data["pmaps"]:
+            try:
+                details = pmap["active_pmapv_details"]
+                pmap_id = details["active_pmapv"]["pmap_id"]
+                map_name = details["map_header"]["name"]
+
+                for region in details.get("regions", []):
+                    seg_id = f"{region['id']}:rid:{pmap_id}"
+                    name = region.get("name") or "Unnamed Room"
+                    segments.append(
+                        Segment(id=seg_id, name=name, group=map_name)
+                    )
+                    self._segment_map[seg_id] = {
+                        "type": "rid",
+                        "region_id": region["id"],
+                        "pmap_id": pmap_id,
+                    }
+
+                for zone in details.get("zones", []):
+                    seg_id = f"{zone['id']}:zid:{pmap_id}"
+                    name = zone.get("name") or "Unnamed Zone"
+                    segments.append(
+                        Segment(id=seg_id, name=name, group=map_name)
+                    )
+                    self._segment_map[seg_id] = {
+                        "type": "zid",
+                        "region_id": zone["id"],
+                        "pmap_id": pmap_id,
+                    }
+            except (KeyError, TypeError) as err:
+                _LOGGER.warning("Failed to parse pmap segments: %s", err)
+
+        _LOGGER.debug("Discovered %d vacuum segments", len(segments))
+        return segments
+
+    async def async_clean_segments(
+        self, segment_ids: list[str], **kwargs: Any
+    ) -> None:
+        if not segment_ids:
+            return
+
+        # Ensure the segment map is populated
+        if not self._segment_map:
+            await self.async_get_segments()
+
+        params = self._build_clean_params()
+
+        regions_by_pmap: dict[str, list[dict[str, Any]]] = {}
+        for seg_id in segment_ids:
+            seg_data = self._segment_map.get(seg_id)
+            if not seg_data:
+                parts = seg_id.split(":")
+                if len(parts) != 3:
+                    _LOGGER.warning("Unknown segment ID: %s", seg_id)
+                    continue
+                seg_data = {
+                    "region_id": parts[0],
+                    "type": parts[1],
+                    "pmap_id": parts[2],
+                }
+
+            region = {
+                "type": seg_data["type"],
+                "region_id": seg_data["region_id"],
+                "params": params,
+            }
+            regions_by_pmap.setdefault(seg_data["pmap_id"], []).append(region)
+
+        for pmap_id, regions in regions_by_pmap.items():
+            payload = {
+                "ordered": 1,
+                "pmap_id": pmap_id,
+                "regions": regions,
+            }
+            _LOGGER.info(
+                "Starting area clean: pmap=%s, regions=%s", pmap_id, regions
+            )
+            await self.hass.services.async_call(
+                DOMAIN,
+                "rest980_clean",
+                },
+                blocking=True,
+            )
 
     @property
     def device_info(self) -> DeviceInfo:

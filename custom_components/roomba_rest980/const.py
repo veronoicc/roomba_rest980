@@ -5,6 +5,13 @@ from datetime import timedelta
 DOMAIN = "roomba_rest980"
 DEFAULT_SCAN_INTERVAL = timedelta(seconds=10)  # or whatever interval you want
 
+OPERATING_MODE_VACUUM = 2
+OPERATING_MODE_MOP = 6
+
+MOP_MODE_LOW = 1
+MOP_MODE_MEDIUM = 2
+MOP_MODE_HIGH = 3
+
 notReadyMappings = {
     -1: "Unknown Ready Status",
     0: "n-a",
