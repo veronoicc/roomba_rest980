@@ -7,7 +7,7 @@ PREFIX=$ROOT_PREF/scripts
 
 RUNJAILED_DIR=/opt/irobot/persistent/opt/runjailed
 SCRIPTS_DIR=$RUNJAILED_DIR/scripts
-LOCAL_IP=$1
+LOCAL_IP=10.10.0.79
 
 cd $SCRIPTS_DIR
 
